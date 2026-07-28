@@ -1,3 +1,5 @@
+![CI](https://github.com/navneet-singh2907/pixelrag-langchain/actions/workflows/ci.yml/badge.svg)
+
 # pixelrag-langchain
 
 A LangChain `Tool` + `Retriever` for [PixelRAG](https://github.com/StarTrail-org/PixelRAG) — visual, screenshot-native search for AI agents.
