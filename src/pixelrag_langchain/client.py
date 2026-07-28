@@ -48,14 +48,35 @@ class PixelRAGAPIError(PixelRAGError):
 
 @dataclass
 class PixelRAGTile:
-    """One retrieved screenshot tile, defensively parsed from the API response."""
+    """One retrieved screenshot tile, parsed from the API response.
+
+    Field mapping verified against a live api.pixelrag.ai response (July
+    2026), where each hit looks like:
+
+        {"score": 0.588, "vector_id": 18869670, "article_id": 5663927,
+         "tile_index": 0, "chunk_index": 7, "y_offset": 7168,
+         "tile_height": 1024,
+         "path": "shard_683/.../5663927.png.tiles/chunk_0000_07.png",
+         "url": "Outline_of_France",        # NB: article TITLE, not a URL
+         "article_pages": "0:0-7,...", "image_base64": null}
+
+    Quirks preserved here on purpose:
+      - The server's "url" field holds the article title -> mapped to
+        `source`, NOT to `image_url`.
+      - "path" is a relative tile path within the server's tile store, not a
+        directly fetchable URL -> exposed as `tile_path`.
+      - Image bytes come back only when the server includes "image_base64".
+    Anything unmapped stays available in `raw`.
+    """
 
     score: float
     tile_id: str | None = None
-    source: str | None = None          # e.g. originating page/article/doc id
-    image_url: str | None = None       # if server returns a fetchable URL
-    image_base64: str | None = None    # if server returns inline image bytes
-    caption: str | None = None         # any accompanying text/OCR the server provides
+    source: str | None = None          # article title (server's "url") or doc/article id
+    article_id: str | None = None
+    tile_path: str | None = None       # relative path in the server's tile store
+    image_url: str | None = None       # only if server returns a real fetchable URL
+    image_base64: str | None = None    # inline image bytes, when provided
+    caption: str | None = None         # accompanying text/OCR, when provided
     raw: dict[str, Any] = field(default_factory=dict)  # untouched original record
 
     @classmethod
@@ -66,13 +87,26 @@ class PixelRAGTile:
         except (TypeError, ValueError):
             score = 0.0
 
+        article_id = record.get("article_id") or record.get("doc_id")
+        tile_id = record.get("tile_id") or record.get("vector_id") or record.get("id")
+
+        # "url" is the article title in the live schema. Only treat it as a
+        # fetchable image URL if it actually looks like one.
+        url_field = record.get("url")
+        looks_like_real_url = isinstance(url_field, str) and url_field.startswith(
+            ("http://", "https://")
+        )
+
         return cls(
             score=score,
-            tile_id=record.get("tile_id") or record.get("id"),
+            tile_id=str(tile_id) if tile_id is not None else None,
             source=record.get("source")
-            or record.get("article_id")
-            or record.get("doc_id"),
-            image_url=record.get("image_url") or record.get("url"),
+            or (url_field if not looks_like_real_url else None)
+            or (str(article_id) if article_id is not None else None),
+            article_id=str(article_id) if article_id is not None else None,
+            tile_path=record.get("path"),
+            image_url=record.get("image_url")
+            or (url_field if looks_like_real_url else None),
             image_base64=record.get("image_base64") or record.get("image"),
             caption=record.get("caption") or record.get("text"),
             raw=record,
@@ -173,8 +207,13 @@ class PixelRAGClient:
             )
             return []
 
-        # Flatten one level if the server grouped by query.
-        if results and isinstance(results[0], list):
+        # Real observed schema (api.pixelrag.ai, July 2026): results is a list
+        # of per-query objects, each wrapping its records in a "hits" list:
+        #   {"results": [{"hits": [{...}, {...}]}]}
+        if results and isinstance(results[0], dict) and "hits" in results[0]:
+            results = results[0].get("hits") or []
+        # Older/alternate shape: list-of-lists grouped by query.
+        elif results and isinstance(results[0], list):
             results = results[0]
 
         tiles: list[PixelRAGTile] = []

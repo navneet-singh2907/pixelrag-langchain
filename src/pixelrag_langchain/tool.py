@@ -89,6 +89,8 @@ class PixelRAGSearchTool(BaseTool):
                 bits.append(f'caption="{tile.caption[:200]}"')
             elif tile.image_url or tile.image_base64:
                 bits.append("(image tile — no text caption; fetch the image to read it)")
+            elif tile.tile_path:
+                bits.append(f"tile_path={tile.tile_path}")
             lines.append("  " + " | ".join(bits))
 
         return "\n".join(lines)

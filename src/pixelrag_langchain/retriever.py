@@ -29,7 +29,7 @@ class PixelRAGRetriever(BaseRetriever):
     """
 
     config: PixelRAGConfig = PixelRAGConfig()
-    n_docs: int = 5
+    n_docs: int | None = None
     raise_on_error: bool = False
     """If False (default), connection/timeout errors return [] instead of
     raising, so a flaky visual index doesn't crash the whole chain. Set True
@@ -62,6 +62,8 @@ class PixelRAGRetriever(BaseRetriever):
                 "score": tile.score,
                 "tile_id": tile.tile_id,
                 "source": tile.source,
+                "article_id": tile.article_id,
+                "tile_path": tile.tile_path,
                 "image_url": tile.image_url,
                 "image_base64": tile.image_base64,
                 "modality": "image",

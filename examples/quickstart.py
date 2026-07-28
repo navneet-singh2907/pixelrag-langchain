@@ -40,6 +40,8 @@ def main() -> None:
             print(f"    caption: {doc.page_content}")
         if md.get("image_url"):
             print(f"    image:   {md['image_url']}")
+        elif md.get("tile_path"):
+            print(f"    tile:    {md['tile_path']}")
 
 
 if __name__ == "__main__":
