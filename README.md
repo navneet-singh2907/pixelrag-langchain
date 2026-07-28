@@ -104,7 +104,7 @@ These are the paper's own reported numbers, not something we independently repro
 ## Development
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/pixelrag-langchain
+git clone https://github.com/navneet-singh2907/pixelrag-langchain
 cd pixelrag-langchain
 pip install -e ".[dev]"
 pytest
