@@ -1,4 +1,4 @@
-[![CI](https://github.com/navneet-singh2907/Pixle-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/navneet-singh2907/Pixle-Agent/actions/workflows/ci.yml)
+[![CI](https://github.com/navneet-singh2907/pixelrag-langchain/actions/workflows/ci.yml/badge.svg)](https://github.com/navneet-singh2907/pixelrag-langchain/actions/workflows/ci.yml)
 
 # pixelrag-langchain
 
