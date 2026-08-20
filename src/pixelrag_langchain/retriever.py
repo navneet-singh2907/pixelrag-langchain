@@ -4,8 +4,8 @@ Note on Documents: LangChain's `Document` is a text-container. Screenshot
 tiles are images, so we don't lie about that — `page_content` holds whatever
 caption/OCR text the server gave us (often none), and the actual image
 reference (URL or base64) lives in `metadata`. If your downstream chain needs
-the pixels, read `metadata["image_url"]` or `metadata["image_base64"]` and
-pass them to a vision-capable model yourself.
+the pixels, read `metadata["image_url"]` (the fetchable coordinate URL) or
+`metadata["image_base64"]` and pass it to a vision-capable model.
 """
 
 from __future__ import annotations
@@ -30,6 +30,8 @@ class PixelRAGRetriever(BaseRetriever):
 
     config: PixelRAGConfig = PixelRAGConfig()
     n_docs: int | None = None
+    include_images: bool = False
+    """Request base64 images inline. Off by default to keep searches small."""
     raise_on_error: bool = False
     """If False (default), connection/timeout errors return [] instead of
     raising, so a flaky visual index doesn't crash the whole chain. Set True
@@ -49,7 +51,11 @@ class PixelRAGRetriever(BaseRetriever):
     ) -> list[Document]:
         client = self._get_client()
         try:
-            tiles = client.search(query, n_docs=self.n_docs)
+            tiles = client.search(
+                query,
+                n_docs=self.n_docs,
+                include_images=self.include_images,
+            )
         except PixelRAGError as exc:
             run_manager.on_retriever_error(exc)
             if self.raise_on_error:
@@ -58,13 +64,17 @@ class PixelRAGRetriever(BaseRetriever):
 
         documents: list[Document] = []
         for tile in tiles:
+            tile_url = client.tile_url(tile)
             metadata: dict[str, Any] = {
                 "score": tile.score,
                 "tile_id": tile.tile_id,
                 "source": tile.source,
                 "article_id": tile.article_id,
+                "tile_index": tile.tile_index,
+                "chunk_index": tile.chunk_index,
                 "tile_path": tile.tile_path,
-                "image_url": tile.image_url,
+                "tile_url": tile_url,
+                "image_url": tile.image_url or tile_url,
                 "image_base64": tile.image_base64,
                 "modality": "image",
             }
@@ -72,3 +82,9 @@ class PixelRAGRetriever(BaseRetriever):
                 Document(page_content=tile.caption or "", metadata=metadata)
             )
         return documents
+
+    def close(self) -> None:
+        """Release the lazily-created HTTP client, if any."""
+        if self._client is not None:
+            self._client.close()
+            self._client = None

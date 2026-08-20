@@ -5,11 +5,10 @@ Request shape follows the upstream README's documented example:
     POST /search
     {"queries": [{"text": "What is the capital of France?"}], "n_docs": 5}
 
-The exact response schema isn't published as a formal spec anywhere we could
-find (the project is young and pre-1.0), so parsing here is deliberately
-defensive: it accepts a few plausible field-name variants per result and
-falls back to keeping the raw dict around rather than raising, so a schema
-tweak upstream degrades gracefully instead of crashing your agent mid-run.
+The authoritative schema is published by each server at `/openapi.json`.
+PixelRAG is still pre-1.0, so parsing remains deliberately defensive: additive
+fields are retained in `raw`, and malformed result containers degrade to an
+empty result rather than crashing an agent mid-run.
 """
 
 from __future__ import annotations
@@ -17,6 +16,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -73,11 +73,22 @@ class PixelRAGTile:
     tile_id: str | None = None
     source: str | None = None          # article title (server's "url") or doc/article id
     article_id: str | None = None
-    tile_path: str | None = None       # relative path in the server's tile store
+    tile_index: int | None = None
+    chunk_index: int | None = None
+    tile_path: str | None = None       # server-relative and informational only
     image_url: str | None = None       # only if server returns a real fetchable URL
     image_base64: str | None = None    # inline image bytes, when provided
     caption: str | None = None         # accompanying text/OCR, when provided
     raw: dict[str, Any] = field(default_factory=dict)  # untouched original record
+
+    @property
+    def has_tile_coordinates(self) -> bool:
+        """Whether this hit can be addressed through the `/tile` endpoint."""
+        return (
+            self.article_id is not None
+            and self.tile_index is not None
+            and self.chunk_index is not None
+        )
 
     @classmethod
     def from_api_record(cls, record: dict[str, Any]) -> "PixelRAGTile":
@@ -89,6 +100,12 @@ class PixelRAGTile:
 
         article_id = record.get("article_id") or record.get("doc_id")
         tile_id = record.get("tile_id") or record.get("vector_id") or record.get("id")
+
+        def as_int(value: Any) -> int | None:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
 
         # "url" is the article title in the live schema. Only treat it as a
         # fetchable image URL if it actually looks like one.
@@ -104,6 +121,8 @@ class PixelRAGTile:
             or (url_field if not looks_like_real_url else None)
             or (str(article_id) if article_id is not None else None),
             article_id=str(article_id) if article_id is not None else None,
+            tile_index=as_int(record.get("tile_index")),
+            chunk_index=as_int(record.get("chunk_index")),
             tile_path=record.get("path"),
             image_url=record.get("image_url")
             or (url_field if looks_like_real_url else None),
@@ -128,8 +147,18 @@ class PixelRAGClient:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
         self._http = httpx.Client(timeout=self.config.timeout_s, headers=headers)
 
-    def search(self, query: str, n_docs: int | None = None) -> list[PixelRAGTile]:
+    def search(
+        self,
+        query: str,
+        n_docs: int | None = None,
+        *,
+        include_images: bool = False,
+    ) -> list[PixelRAGTile]:
         """Run one text query against the index and return ranked tiles.
+
+        Set `include_images=True` to request inline base64 images. The default
+        keeps search responses small; use `tile_url()` or `fetch_tile()` to
+        retrieve only the images needed downstream.
 
         Raises:
             PixelRAGConnectionError: server unreachable (wrong URL, not running).
@@ -139,27 +168,18 @@ class PixelRAGClient:
         if not query or not query.strip():
             return []
 
-        payload = {
+        requested_n_docs = self.config.n_docs if n_docs is None else n_docs
+        if requested_n_docs < 1:
+            raise ValueError("n_docs must be at least 1")
+
+        payload: dict[str, Any] = {
             "queries": [{"text": query}],
-            "n_docs": n_docs or self.config.n_docs,
+            "n_docs": requested_n_docs,
         }
+        if include_images:
+            payload["include_images"] = True
 
-        try:
-            response = self._http.post(self.config.search_url, json=payload)
-        except httpx.TimeoutException as exc:
-            raise PixelRAGTimeoutError(
-                f"pixelrag-serve at {self.config.base_url} timed out after "
-                f"{self.config.timeout_s}s. Is it running and warmed up?"
-            ) from exc
-        except httpx.ConnectError as exc:
-            raise PixelRAGConnectionError(
-                f"Could not connect to pixelrag-serve at {self.config.base_url}. "
-                "Is `pixelrag-serve --index-dir ./index --port 30001` running? "
-                "See https://github.com/StarTrail-org/PixelRAG for setup."
-            ) from exc
-
-        if response.status_code >= 400:
-            raise PixelRAGAPIError(response.status_code, response.text)
+        response = self._request("POST", self.config.search_url, json=payload)
 
         try:
             data = response.json()
@@ -168,13 +188,62 @@ class PixelRAGClient:
 
         return self._parse_results(data)
 
+    def tile_url(self, tile: PixelRAGTile) -> str | None:
+        """Return the server URL for a tile, or `None` without coordinates."""
+        if not tile.has_tile_coordinates:
+            return None
+        return (
+            f"{self.config.base_url.rstrip('/')}/tile/"
+            f"{quote(tile.article_id, safe='')}/{tile.tile_index}/{tile.chunk_index}"
+        )
+
+    def fetch_tile(self, tile: PixelRAGTile) -> bytes:
+        """Download image bytes for one retrieved tile."""
+        url = self.tile_url(tile)
+        if url is None:
+            raise ValueError(
+                "Tile is missing article_id, tile_index, or chunk_index; "
+                "cannot construct its image URL."
+            )
+        return self._request("GET", url).content
+
+    def status(self) -> dict[str, Any]:
+        """Return server/index diagnostics from the public `/status` endpoint."""
+        response = self._request("GET", self.config.status_url)
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise PixelRAGAPIError(response.status_code, response.text) from exc
+        if not isinstance(data, dict):
+            raise PixelRAGAPIError(
+                response.status_code, "Expected a JSON object from /status"
+            )
+        return data
+
     def health(self) -> bool:
         """Best-effort check that the server is up. Never raises."""
         try:
-            r = self._http.get(self.config.health_url)
-            return r.status_code < 400
-        except httpx.HTTPError:
+            self._request("GET", self.config.health_url)
+            return True
+        except PixelRAGError:
             return False
+
+    def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        """Send one request and normalize all transport/API failures."""
+        try:
+            response = self._http.request(method, url, **kwargs)
+        except httpx.TimeoutException as exc:
+            raise PixelRAGTimeoutError(
+                f"Request to {url} timed out after {self.config.timeout_s}s."
+            ) from exc
+        except httpx.RequestError as exc:
+            raise PixelRAGConnectionError(
+                f"Could not reach pixelrag-serve at {self.config.base_url}: {exc}"
+            ) from exc
+
+        if response.status_code >= 400:
+            raise PixelRAGAPIError(response.status_code, response.text)
+        return response
 
     def close(self) -> None:
         self._http.close()
@@ -186,7 +255,7 @@ class PixelRAGClient:
         self.close()
 
     @staticmethod
-    def _parse_results(data: dict[str, Any]) -> list[PixelRAGTile]:
+    def _parse_results(data: Any) -> list[PixelRAGTile]:
         """Handle a couple of plausible top-level shapes without raising.
 
         Known/expected shapes we defend against:
@@ -196,6 +265,12 @@ class PixelRAGClient:
         Anything else logs a warning and returns an empty list rather than
         raising, so a single malformed response doesn't take down an agent.
         """
+        if not isinstance(data, dict):
+            logger.warning(
+                "Unrecognized pixelrag-serve response type: %s", type(data).__name__
+            )
+            return []
+
         results = data.get("results")
         if results is None and isinstance(data.get("data"), dict):
             results = data["data"].get("results")
@@ -207,6 +282,10 @@ class PixelRAGClient:
             )
             return []
 
+        if not isinstance(results, list):
+            logger.warning("pixelrag-serve 'results' field was not a list")
+            return []
+
         # Real observed schema (api.pixelrag.ai, July 2026): results is a list
         # of per-query objects, each wrapping its records in a "hits" list:
         #   {"results": [{"hits": [{...}, {...}]}]}
@@ -215,6 +294,10 @@ class PixelRAGClient:
         # Older/alternate shape: list-of-lists grouped by query.
         elif results and isinstance(results[0], list):
             results = results[0]
+
+        if not isinstance(results, list):
+            logger.warning("pixelrag-serve 'hits' field was not a list")
+            return []
 
         tiles: list[PixelRAGTile] = []
         for record in results:

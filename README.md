@@ -36,7 +36,7 @@ This installs only the LangChain adapter (`httpx`, `langchain-core`, `pydantic`)
 
 ## Quickstart — zero setup
 
-Upstream PixelRAG runs an official public demo endpoint — no API key, no index to download, searches their pre-built 8.28M-page Wikipedia index. Nothing to install beyond this package:
+Upstream PixelRAG runs an official public production endpoint — no API key or index download required. Nothing to install beyond this package:
 
 ```python
 from pixelrag_langchain import PixelRAGRetriever, PixelRAGConfig
@@ -45,10 +45,40 @@ retriever = PixelRAGRetriever(config=PixelRAGConfig.hosted())
 docs = retriever.invoke("What is the capital of France?")
 
 for doc in docs:
-    print(doc.metadata["score"], doc.metadata["source"], doc.metadata.get("image_url"))
+    print(doc.metadata["score"], doc.metadata["source"])
+    print(doc.metadata["image_url"])  # fetchable PNG URL
 ```
 
-`PixelRAGConfig.hosted()` points at `https://api.pixelrag.ai`, upstream's own documented endpoint (see the "Live, hosted endpoint" section of [their README](https://github.com/StarTrail-org/PixelRAG#readme)). It's their infrastructure and their Wikipedia index, not ours or yours — great for a first try, not for anything you'd want uptime guarantees on or that touches your own documents.
+`PixelRAGConfig.hosted()` points at `https://api.pixelrag.ai`, upstream's documented production endpoint. It uses their infrastructure and Wikipedia index, not your documents. PixelRAG does not publish throughput, latency, or rate-limit guarantees; self-host when you need guaranteed capacity or private data.
+
+## Retrieving the actual tile images
+
+Search results identify each screenshot with `article_id`, `tile_index`, and `chunk_index`. Version 0.2 turns those coordinates into the upstream-supported `/tile/...` URL; the server-relative `path` field is informational and should not be used to construct URLs.
+
+Use the client when you want explicit control over image downloads:
+
+```python
+from pixelrag_langchain import PixelRAGClient, PixelRAGConfig
+
+with PixelRAGClient(PixelRAGConfig.hosted()) as client:
+    tile = client.search("diagram of a transformer architecture", n_docs=1)[0]
+    print(client.tile_url(tile))
+    png_bytes = client.fetch_tile(tile)
+```
+
+The separate `GET /tile/{article_id}/{tile_index}/{chunk_index}` request is the recommended default because it keeps search responses small. If you need every image inline, explicitly request base64 data:
+
+```python
+with PixelRAGClient(PixelRAGConfig.hosted()) as client:
+    tiles = client.search("quarterly revenue chart", include_images=True)
+    print(tiles[0].image_base64)
+```
+
+`PixelRAGRetriever` exposes the coordinate URL in both `metadata["tile_url"]` and `metadata["image_url"]`. `PixelRAGSearchTool` provides `tile_image_url()` and `fetch_tile_bytes()` for structured LangGraph workflows. See [`examples/langgraph_node.py`](examples/langgraph_node.py) for a complete multimodal-message handoff.
+
+The API is currently pre-1.0. Its authoritative machine-readable contract is served at [`/openapi.json`](https://api.pixelrag.ai/openapi.json); this package parses additive hit fields leniently.
+
+For operational checks, `client.health()` returns a best-effort boolean and `client.status()` returns the server's current index diagnostics.
 
 ## Quickstart — your own documents
 

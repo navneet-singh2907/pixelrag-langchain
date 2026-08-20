@@ -35,12 +35,15 @@ def retrieve_node(state: AgentState) -> AgentState:
 def build_reader_message(query: str, tiles: list[PixelRAGTile]) -> HumanMessage:
     content: list[dict] = [{"type": "text", "text": f"Answer using these screenshots: {query}"}]
     for tile in tiles:
-        if tile.image_url:
-            content.append({"type": "image_url", "image_url": {"url": tile.image_url}})
-        elif tile.image_base64:
+        if tile.image_base64:
             content.append(
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{tile.image_base64}"}}
             )
+            continue
+
+        image_url = tile.image_url or search_tool.tile_image_url(tile)
+        if image_url:
+            content.append({"type": "image_url", "image_url": {"url": image_url}})
     return HumanMessage(content=content)
 
 

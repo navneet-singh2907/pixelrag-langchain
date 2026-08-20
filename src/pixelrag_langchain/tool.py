@@ -59,9 +59,25 @@ class PixelRAGSearchTool(BaseTool):
             self._client = PixelRAGClient(self.config)
         return self._client
 
-    def search_tiles(self, query: str, n_docs: int = 5) -> list[PixelRAGTile]:
-        """Structured access, image data intact. Use this from LangGraph nodes."""
-        return self._get_client().search(query, n_docs=n_docs)
+    def search_tiles(
+        self,
+        query: str,
+        n_docs: int = 5,
+        *,
+        include_images: bool = False,
+    ) -> list[PixelRAGTile]:
+        """Return structured hits for use in LangGraph or custom pipelines."""
+        return self._get_client().search(
+            query, n_docs=n_docs, include_images=include_images
+        )
+
+    def tile_image_url(self, tile: PixelRAGTile) -> str | None:
+        """Return the fetchable coordinate-based image URL for a tile."""
+        return self._get_client().tile_url(tile)
+
+    def fetch_tile_bytes(self, tile: PixelRAGTile) -> bytes:
+        """Download image bytes for a retrieved tile."""
+        return self._get_client().fetch_tile(tile)
 
     def _run(
         self,
@@ -87,10 +103,17 @@ class PixelRAGSearchTool(BaseTool):
                 bits.append(f"tile_id={tile.tile_id}")
             if tile.caption:
                 bits.append(f'caption="{tile.caption[:200]}"')
-            elif tile.image_url or tile.image_base64:
-                bits.append("(image tile — no text caption; fetch the image to read it)")
-            elif tile.tile_path:
-                bits.append(f"tile_path={tile.tile_path}")
+            image_url = tile.image_url or self.tile_image_url(tile)
+            if image_url:
+                bits.append(f"image={image_url}")
+            elif tile.image_base64:
+                bits.append("(inline image attached)")
             lines.append("  " + " | ".join(bits))
 
         return "\n".join(lines)
+
+    def close(self) -> None:
+        """Release the lazily-created HTTP client, if any."""
+        if self._client is not None:
+            self._client.close()
+            self._client = None

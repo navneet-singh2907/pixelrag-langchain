@@ -4,11 +4,10 @@ The constructor default points at a local `pixelrag serve` instance
 (`pip install 'pixelrag[serve]'`) rather than any third-party host — a
 library shouldn't silently route your queries somewhere you didn't choose.
 
-Upstream PixelRAG (github.com/StarTrail-org/PixelRAG) does also run an
-officially documented public endpoint for a no-setup demo against their
-8.28M-page Wikipedia index, no API key required, with its own status page
-(status.pixelrag.ai). Use `PixelRAGConfig.hosted()` to point at it — that's
-one explicit line, not something this package assumes for you.
+Upstream PixelRAG (github.com/StarTrail-org/PixelRAG) also runs an officially
+documented public production endpoint for its Wikipedia index, with no API key
+required. Use `PixelRAGConfig.hosted()` to point at it — that's one explicit
+line, not something this package assumes for you.
 """
 
 from __future__ import annotations
@@ -48,11 +47,10 @@ class PixelRAGConfig:
 
     @classmethod
     def hosted(cls, **overrides: object) -> "PixelRAGConfig":
-        """Point at upstream's official public demo endpoint (api.pixelrag.ai).
+        """Point at upstream's public production endpoint (api.pixelrag.ai).
 
-        No API key needed. Searches their pre-built 8.28M-page Wikipedia
-        index only — not your own documents. Good for trying this package
-        out in under a minute; switch to a self-hosted index for real use.
+        No API key needed. Searches their Wikipedia index only — not your own
+        documents. Self-host when you need private data or guaranteed capacity.
         """
         return cls(base_url=PIXELRAG_HOSTED_BASE_URL, **overrides)  # type: ignore[arg-type]
 
@@ -63,3 +61,7 @@ class PixelRAGConfig:
     @property
     def health_url(self) -> str:
         return f"{self.base_url.rstrip('/')}/health"
+
+    @property
+    def status_url(self) -> str:
+        return f"{self.base_url.rstrip('/')}/status"

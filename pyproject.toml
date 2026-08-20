@@ -1,12 +1,12 @@
 [project]
 name = "pixelrag-langchain"
-version = "0.1.0"
+version = "0.2.0"
 description = "LangChain Tool + Retriever for PixelRAG (screenshot-native visual search) — unofficial community integration"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 authors = [
-    { name = "Your Name" },
+    { name = "Navneet Singh" },
 ]
 keywords = ["langchain", "langgraph", "rag", "pixelrag", "visual-search", "agents", "vlm"]
 classifiers = [
@@ -36,7 +36,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/YOUR_USERNAME/pixelrag-langchain"
+Homepage = "https://github.com/navneet-singh2907/pixelrag-langchain"
+Repository = "https://github.com/navneet-singh2907/pixelrag-langchain"
 "Upstream PixelRAG (not affiliated)" = "https://github.com/StarTrail-org/PixelRAG"
 "PixelRAG paper" = "https://papers.cool/arxiv/2606.28344"
 

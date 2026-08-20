@@ -1,6 +1,6 @@
 """Minimal end-to-end example.
 
-Set PIXELRAG_MODE=hosted to hit upstream's public demo endpoint (zero setup,
+Set PIXELRAG_MODE=hosted to hit upstream's public production endpoint (zero setup,
 Wikipedia only, api.pixelrag.ai — see the upstream README). Default is
 `local`, which expects your own `pixelrag serve` instance:
 

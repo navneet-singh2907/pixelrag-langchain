@@ -18,3 +18,4 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
       - run: python -m pytest -v
+      - run: python -m pip wheel . --no-deps --wheel-dir dist
