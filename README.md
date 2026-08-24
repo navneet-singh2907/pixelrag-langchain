@@ -1,3 +1,5 @@
+[![DeepSource](https://app.deepsource.com/gh/navneet-singh2907/pixelrag-langchain.svg/?label=code+coverage&show_trend=true&token=IxW1QBGxZ_fS27YFYgJ81_u6)](https://app.deepsource.com/gh/navneet-singh2907/pixelrag-langchain/)
+
 [![CI](https://github.com/navneet-singh2907/pixelrag-langchain/actions/workflows/ci.yml/badge.svg)](https://github.com/navneet-singh2907/pixelrag-langchain/actions/workflows/ci.yml)
 
 # pixelrag-langchain
