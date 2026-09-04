@@ -45,5 +45,8 @@ Repository = "https://github.com/navneet-singh2907/pixelrag-langchain"
 requires = ["hatchling>=1.24.0"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+exclude = ["/handoff.md"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/pixelrag_langchain"]
