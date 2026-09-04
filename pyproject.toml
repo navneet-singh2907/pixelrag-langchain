@@ -1,6 +1,6 @@
 [project]
 name = "pixelrag-langchain"
-version = "0.2.0"
+version = "0.2.1"
 description = "LangChain Tool + Retriever for PixelRAG (screenshot-native visual search) — unofficial community integration"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -38,7 +38,7 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/navneet-singh2907/pixelrag-langchain"
 Repository = "https://github.com/navneet-singh2907/pixelrag-langchain"
-"Upstream PixelRAG (not affiliated)" = "https://github.com/StarTrail-org/PixelRAG"
+"Upstream PixelRAG" = "https://github.com/StarTrail-org/PixelRAG"
 "PixelRAG paper" = "https://papers.cool/arxiv/2606.28344"
 
 [build-system]

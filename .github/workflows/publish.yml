@@ -8,7 +8,7 @@ on:
       tag:
         description: "Existing release tag to publish (for example, v0.2.0)"
         required: true
-        default: "v0.2.0"
+        default: "v0.2.1"
 
 concurrency:
   group: pypi-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
@@ -47,9 +47,11 @@ jobs:
       - name: Validate distribution metadata
         run: python -m twine check dist/*
 
-      - name: Ensure private project notes are not packaged
+      - name: Validate distribution contents
         run: |
           python - <<'PY'
+          from email.parser import BytesParser
+          from email.policy import default
           from pathlib import Path
           import tarfile
           import zipfile
@@ -59,14 +61,29 @@ jobs:
               if artifact.suffix == ".whl":
                   with zipfile.ZipFile(artifact) as archive:
                       names = archive.namelist()
+                      metadata_name = next(name for name in names if name.endswith(".dist-info/METADATA"))
+                      metadata_bytes = archive.read(metadata_name)
               elif artifact.name.endswith(".tar.gz"):
                   with tarfile.open(artifact, "r:gz") as archive:
                       names = archive.getnames()
+                      metadata_name = next(name for name in names if name.endswith("/PKG-INFO"))
+                      metadata_file = archive.extractfile(metadata_name)
+                      if metadata_file is None:
+                          raise SystemExit(f"Could not read {metadata_name} from {artifact}")
+                      metadata_bytes = metadata_file.read()
               else:
                   continue
 
               if any(Path(name).name.lower() == forbidden for name in names):
                   raise SystemExit(f"{forbidden} found in {artifact}")
+
+              metadata = BytesParser(policy=default).parsebytes(metadata_bytes)
+              for project_url in metadata.get_all("Project-URL", []):
+                  label = project_url.split(",", 1)[0].strip()
+                  if len(label) > 32:
+                      raise SystemExit(
+                          f"Project-URL label {label!r} in {artifact} exceeds 32 characters"
+                      )
           PY
 
       - name: Upload distributions
